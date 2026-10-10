@@ -1,0 +1,164 @@
+#!/usr/bin/env python3.10
+# we have to define env python3.10 because env command will search for the python3.10 interpreter in the system's PATH environment variable and use that interpreter to run the script. This allows the script to be run on different systems without having to hardcode the path to the python3.10 interpreter.
+
+import re
+import os
+import sys
+import requests
+from bs4 import BeautifulSoup
+
+arguments = {
+	"recursive": False,
+	"limit": 6,
+	"output_dir": "./data/",
+	"url": None
+}
+
+visited_urls = []
+
+matchPattern = re.compile(r"([\w:/.\-\%~@\\/]+?(\.png|\.jpg|\.jpeg|\.bmp|\.gif))", re.IGNORECASE | re.MULTILINE)
+
+def write_to_file(content, output_dir, filename):
+	try:
+		os.makedirs(output_dir, 755, exist_ok=True)
+		with open(output_dir + filename, "wb") as file: #wb mode is used to write binary data to the file. This is important for downloading files, as they may contain non-text data (e.g., images, videos, etc.). Using "wb" ensures that the file is written correctly without any encoding issues.
+			file.write(content)
+	except IOError as e:
+		print(f"Error: Failed to write to file {filename}: {e}")
+		return
+
+
+def get_url(url):
+	if not url:
+		print("Error: URL is required.")
+		return None
+
+	try:
+		request = requests.get(url)
+	except requests.RequestException as e: # as e: captures the exception object and assigns it to the variable e. This allows us to access information about the exception, such as its message or type, which can be useful for debugging or logging purposes.
+		print(f"Error: Failed to retrieve URL: {e}")
+		return None
+
+	if request.status_code != 200:
+		print("Error: Failed to retrieve URL.")
+		return None
+	
+	return request
+
+def harvest_images(url):
+	request = get_url(url)
+	
+	images = matchPattern.findall(request.text)
+
+	for img in images:
+		img_url = img[0]
+		img_url = img_url.replace("\/", "/")  # Replace backslashes with forward slashes
+		if img_url.startswith("http"):
+			print(f"Downloading image: {img_url}")
+			name = img_url.split("/")[-1]
+			text = get_url(img_url)
+			if text is not None:
+				write_to_file(text.content, arguments["output_dir"], name)
+			else:
+				print(f"Error: Failed to download image {img_url}")
+		elif img_url.startswith("/"):
+			if arguments["url"].endswith("/"):
+				arguments["url"] = arguments["url"][:-1]  # Remove trailing slash
+			name = img_url.split("/")[-1]
+			print(f"Downloading image: {arguments['url'] + img_url}")
+			text = get_url(arguments["url"] + img_url)
+			if text is not None:
+				write_to_file(text.content, arguments["output_dir"], name)
+			else:
+				print(f"Error: Failed to download image {img_url}")
+
+
+def scrapeRecursive(url):
+	request = get_url(url)
+
+	if request is None:
+		return
+
+	s = BeautifulSoup(request.text, "html.parser")
+
+	for i in s.find_all("a"):
+		link = i.attrs.get("href")
+		if link and not link.startswith("#") and not link.startswith("javascript:") and not link.endswith(".js") and not link == "/":
+			if link.startswith("http"):
+				url = link
+				scrapeRecursiveSaveImages(url, url)
+			elif link.startswith("/"):
+				scrapeRecursiveSaveImages(url + link, url)
+
+				
+
+def scrapeRecursiveSaveImages(url, baseurl):
+	if url not in visited_urls:
+		visited_urls.append(url)
+		arguments["limit"] -= 1
+		if arguments["limit"] > 0:
+			harvest_images(url)
+			scrapeRecursive(baseurl)
+
+
+def parser():
+	index = 1
+	argv_len = len(sys.argv)
+
+	arguments["url"] = sys.argv[-1]  # Assume the last argument is the URL
+
+	while index < argv_len:
+		arg = sys.argv[index]
+
+		if arg.startswith("-r") or arg.startswith("-pr") or arg.startswith("-lr"):
+			arguments["recursive"] = True
+		if arg.startswith("-l") or arg.startswith("-rl"):
+			if index + 1 < len(sys.argv):
+				try:
+					arguments["limit"] = int(sys.argv[index + 1]) + 1
+				except ValueError:
+					print("Error: -l flag requires a number argument.")
+					sys.exit(1)
+				index += 2
+				continue
+			else:
+				print("Error: -l flag requires a number argument.")
+				sys.exit(1)
+	
+		if arg.startswith("-p") or arg.startswith("-rp"):
+			if index + 1 < len(sys.argv):
+				arguments["output_dir"] = sys.argv[index + 1]
+				index += 2
+				continue
+			else:
+				print("Error: -p flag requires a directory argument.")
+				sys.exit(1)
+		
+		index += 1
+
+
+if __name__ == "__main__":
+	if len(sys.argv) < 2:
+		print("Usage Error: ./spider [-rlp] URL")
+		sys.exit(1)
+	parser()
+	
+	print("Hello, Spider!\n\n")
+	
+	if not arguments["output_dir"][-1] == "/":
+		arguments["output_dir"] += "/"
+
+	request = get_url(arguments["url"])
+	if request is None:
+		print("Error: The provided URL does not point to an HTML page.")
+		sys.exit(1)
+
+	write_to_file(request.content, arguments["output_dir"], "index.html")
+
+	if not arguments["recursive"]:
+		harvest_images(arguments["url"])
+	elif arguments["recursive"] and arguments["limit"] > 0:
+		scrapeRecursive(arguments["url"])	
+	else:
+		print("Error: Limit must be greater than -1 for recursive mode.")
+		sys.exit(1)
