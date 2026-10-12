@@ -1,0 +1,56 @@
+#!/usr/bin/env python3.10
+
+import sys
+
+from PIL import Image
+from PIL.ExifTags import TAGS
+
+# PIL is a Python Imaging Library that adds image processing capabilities to your Python interpreter. This library supports many file formats, and provides powerful image processing and graphics capabilities.
+# PIL.ExifTags is a module that contains a dictionary of all the EXIF tags. The keys are the tag IDs and the values are the tag names.
+# TAGS is a dictionary that contains all the tag names. The keys are the tag IDs and the values are the tag names.
+# Image is a class that represents an image. It has methods to open, save, and manipulate images.
+
+print("arguments:", sys.argv[1:])  # print the command line arguments passed to the script
+
+try:
+	images = [Image.open(filename) for filename in sys.argv[1:]]  # open all images passed as command line arguments
+except Exception as e:
+	print(f"Error opening images: {e}")
+	sys.exit(1)
+
+
+def extract_exif_metadata(image):
+	# extracting the exif metadata
+	exifdata = image.getexif()
+
+	if not exifdata:
+		print("EXIF Metadata: \n    No EXIF metadata found.")
+		return
+
+	# looping through all the tags present in exifdata
+	print("EXIF Metadata:")
+	for tagid in exifdata:
+		
+		# getting the tag name instead of tag id
+		tagname = TAGS.get(tagid, tagid) # TAGS is a dictionary which contains all the tag names. tagid is the key and tagname is the value. If the tagid is not found in the TAGS dictionary, it will return the tagid itself.
+
+		# passing the tagid to get its respective value
+		value = exifdata.get(tagid)
+	
+		# printing the final result
+		print(f"    {tagname:25}: {value}")
+
+def basic_data(image):
+	print(f"Image: {image.filename}")
+	print("Basic Data:")
+	print(f" - Type: {image.format}")
+	print(f" - Size: {image.size} pixels")
+	print(f" - Width: {image.width} pixels")
+	print(f" - Height: {image.height} pixels")
+
+if __name__ == "__main__":
+	for image in images:
+		basic_data(image)
+		extract_exif_metadata(image)
+		print("\n" + "-" * 40 + "\n")  # print a separator between images
+
